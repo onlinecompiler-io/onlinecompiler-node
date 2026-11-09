@@ -1,6 +1,6 @@
 {
   "name": "onlinecompiler",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Client for the OnlineCompiler.io code execution API: run and judge code in 46 languages in a sandbox, with tools for the Vercel AI SDK",
   "keywords": [
     "code execution",
@@ -18,6 +18,13 @@
     "ai tools"
   ],
   "homepage": "https://onlinecompiler.io/docs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/onlinecompiler-io/onlinecompiler-node.git"
+  },
+  "bugs": {
+    "url": "https://github.com/onlinecompiler-io/onlinecompiler-node/issues"
+  },
   "license": "MIT",
   "author": "RunCode Inc.",
   "type": "module",

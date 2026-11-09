@@ -188,6 +188,10 @@ const html = `<div class="runcode" data-key="YOUR_WIDGET_KEY" data-problem="${pr
 The token is shown only this once and the client never logs it or puts it in an error, so keep it out
 of your own logs too. `external_ref` should be an opaque id: the candidate's page sees it. Record the
 score from the webhook or `client.submission(id)`, never from the browser.
+
+Each Submit's signed receipt is shared, so the widget links to its public page; the page shows
+`external_ref` and your account reference, never the code, tests or output. Pass `share_receipts: false` to keep a
+session's receipts private.
 `client.session(problemId, session.session)` shows the Submits used and the submission ids, and
 `client.revokeSession(problemId, session.session)` ends it at once.
 

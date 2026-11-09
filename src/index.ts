@@ -13,7 +13,7 @@ export {
 	type WebhookOptions
 } from './verify.js';
 
-export const VERSION = '0.5.0';
+export const VERSION = '0.6.0';
 
 const DEFAULT_BASE_URL = 'https://api.onlinecompiler.io';
 // Long enough for a 30-second run or a 60-second run-tests request, plus queueing and network time.
@@ -337,6 +337,9 @@ export interface SessionRequest {
 	expires_in?: number;
 	/** Submits it takes, 1 to 20 (default 1). */
 	max_submits?: number;
+	/** Whether each Submit's signed receipt is public by link, so the widget can link to it (default true). A
+	 * shared receipt shows external_ref and your account reference, never the code, tests or output. */
+	share_receipts?: boolean;
 }
 
 /** A widget session as its owner sees it, never with its token. */
@@ -348,6 +351,7 @@ export interface ProblemSession {
 	metadata: Record<string, unknown> | null;
 	callback_url: string;
 	max_submits: number;
+	share_receipts: boolean;
 	submits_used: number;
 	expires: string;
 	revoked: string | null;

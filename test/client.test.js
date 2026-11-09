@@ -472,13 +472,15 @@ describe('judging', () => {
 		const created = { session: 'pss_Qm4Tn8Vx2Kb7Hc3Ld9Wz5Ey1', problem: PROB, version: 2, token: TOKEN };
 		reply(201, created);
 		const session = await client.createSession('sum', {
-			external_ref: 'attempt-7', metadata: { c: 1 }, callback_url: 'https://example.com/h', expires_in: 600, max_submits: 2
+			external_ref: 'attempt-7', metadata: { c: 1 }, callback_url: 'https://example.com/h', expires_in: 600, max_submits: 2,
+			share_receipts: false
 		});
 		assert.equal(session.token, TOKEN);
 		assert.equal(sent().method, 'POST');
 		assert.equal(sent().path, '/api/problems/sum/sessions/');
 		assert.deepEqual(sent().body, {
-			external_ref: 'attempt-7', metadata: { c: 1 }, callback_url: 'https://example.com/h', expires_in: 600, max_submits: 2
+			external_ref: 'attempt-7', metadata: { c: 1 }, callback_url: 'https://example.com/h', expires_in: 600, max_submits: 2,
+			share_receipts: false
 		});
 		reply(201, created);
 		await client.createSession(PROB, { external_ref: 'attempt-8' });
