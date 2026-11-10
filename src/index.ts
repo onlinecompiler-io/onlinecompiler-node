@@ -13,7 +13,7 @@ export {
 	type WebhookOptions
 } from './verify.js';
 
-export const VERSION = '0.6.0';
+export const VERSION = '0.7.1';
 
 const DEFAULT_BASE_URL = 'https://api.onlinecompiler.io';
 // Long enough for a 30-second run or a 60-second run-tests request, plus queueing and network time.
@@ -29,7 +29,7 @@ const IDEMPOTENCY_KEY = /^[\x20-\x7e]{1,100}$/;
 const REFUSED_ORIGINAL =
 	'The original request with this idempotency_key was refused, so it was not judged. Send it again.';
 
-export type Checker = 'trim' | 'exact' | 'tokens' | 'float' | 'rows';
+export type Checker = 'trim' | 'exact' | 'tokens' | 'float' | 'rows' | 'table' | 'table_ordered';
 export type Scoring = 'all_or_nothing' | 'percent' | 'weighted';
 export type Mode = 'all' | 'samples' | 'tests';
 
@@ -62,7 +62,7 @@ export interface RunRequest {
 	/** Command-line arguments for the program: up to 32 strings, 4,096 bytes in all. Not for sqlite-3, duckdb-1.5
 	 * or erlang-29. */
 	args?: string[];
-	/** Whole MB, 16 to 512: a run whose peak memory is over it ends with exit_code 137. */
+	/** Whole MB, 16 to 2048 (512 when left out): above 512, on Pro and Business, it raises the run's memory; a run whose peak memory is over it ends with exit_code 137. */
 	memory_limit?: number;
 }
 
@@ -128,7 +128,7 @@ export interface RunTestsRequest extends JudgingOptions {
 	stop_on_failure?: boolean;
 	/** Shared by every test. */
 	files?: InputFile[];
-	/** Whole MB, 16 to 512, for every test. */
+	/** Whole MB, 16 to 2048 (above 512 on Pro and Business; 512 when left out), for every test. */
 	memory_limit?: number;
 }
 
@@ -385,6 +385,8 @@ export interface Usage {
 	submissions_per_minute: number;
 	pending_submissions: number;
 	running_submissions: number;
+	/** The highest memory_limit (MB) this account's runs may send: 512, or 2048 on Pro and Business or with an exam tier. */
+	max_memory_mb: number;
 	key?: { submissions: number; monthly_limit: number | null; remaining: number | null };
 }
 

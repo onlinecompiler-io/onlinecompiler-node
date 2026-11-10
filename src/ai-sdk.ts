@@ -154,16 +154,18 @@ export function runTests(options: OnlineCompilerToolOptions = {}): Tool<RunTests
 				},
 				checker: {
 					type: 'string',
-					enum: ['trim', 'exact', 'tokens', 'float', 'rows'],
+					enum: ['trim', 'exact', 'tokens', 'float', 'rows', 'table', 'table_ordered'],
 					description:
 						'How output is compared: trim ignores trailing whitespace (default), exact is byte for byte, tokens ' +
-						'ignores all whitespace differences, float compares numbers within tolerance, rows ignores line order.',
+						'ignores all whitespace differences, float compares numbers within tolerance, rows ignores line order, ' +
+						'table compares CSV tables with a header row by column name, rows in any order (print df.to_csv()), ' +
+						'and table_ordered does the same with rows in order.',
 				},
 				tolerance: {
 					type: 'number',
 					minimum: 0,
 					maximum: 1,
-					description: 'For checker float: the largest allowed difference, from 0 to 1.'
+					description: 'For checkers float, rows, table and table_ordered: the largest allowed difference, from 0 to 1.'
 				},
 				time_limit: {
 					type: 'number',

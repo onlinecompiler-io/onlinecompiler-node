@@ -2,7 +2,7 @@
 
 Run code in 46 languages from JavaScript or TypeScript, or judge it against test cases, through the
 [OnlineCompiler.io](https://onlinecompiler.io/?utm_source=npm) code execution API. Every run gets a
-fresh gVisor sandbox with no network, 512 MB of memory and a 30-second limit. Free up to 100,000 runs
+fresh gVisor sandbox with no network, 512 MB of memory (up to 2 GB on Pro and Business) and a 30-second limit. Free up to 100,000 runs
 a month, commercial use included.
 
 No dependencies: it uses the global `fetch` and Web Crypto, so it works on Node 22.13+, Deno, Bun and
@@ -39,7 +39,7 @@ and `total` (seconds), `memory` (KB), `truncated`, `time_limit` and `files`. `ti
 `memory` are decimal strings, as the API sends them. Compiler ids such as `gcc-15`, `openjdk-25` and
 `nodejs-24` come from `client.compilers()`. Pass `time_limit` (seconds, up to 30) to stop a run sooner.
 Pass `args` (up to 32 strings) to give the program command-line arguments, and `memory_limit` (whole MB,
-16 to 512) to end a run whose peak memory is over it with exit code 137. Both also work on `submit()`;
+16 to 2048; above 512, on Pro and Business, it raises the run's memory) to end a run whose peak memory is over it with exit code 137. Both also work on `submit()`;
 in `runTests()` `args` goes on each test and `memory_limit` applies to all of them. `sqlite-3`,
 `duckdb-1.5` and `erlang-29` take no arguments.
 Request and response fields use the API's own snake_case names, so the
@@ -61,7 +61,7 @@ for (const test of result.tests) console.log(test.verdict);
 ```
 
 Each test counts as one run. Hidden tests return only their verdict. `checker` picks how output is
-compared (`trim` by default, `exact`, `tokens`, `float` or `rows`), `scoring` is `all_or_nothing`
+compared (`trim` by default, `exact`, `tokens`, `float`, `rows`, `table` or `table_ordered`), `scoring` is `all_or_nothing`
 (default), `percent` or `weighted` (with a `weight` per test), and `time_limit` is seconds per test
 (default 2). See the [run-tests docs](https://onlinecompiler.io/docs/run-tests?utm_source=npm).
 

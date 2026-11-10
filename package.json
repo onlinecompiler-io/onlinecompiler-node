@@ -1,6 +1,6 @@
 {
   "name": "onlinecompiler",
-  "version": "0.6.0",
+  "version": "0.7.1",
   "description": "Client for the OnlineCompiler.io code execution API: run and judge code in 46 languages in a sandbox, with tools for the Vercel AI SDK",
   "keywords": [
     "code execution",
