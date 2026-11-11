@@ -655,6 +655,108 @@ describe('fix round', () => {
 	});
 });
 
+const SUITE_FILES = [
+	{ name: 'calculator.py', content: 'def add(a, b):\n    return a + b\n' },
+	{ name: 'tests/test_calculator.py', content: 'from calculator import add\n\ndef test_add():\n    assert add(2, 3) == 5\n' }
+];
+const SUITE_RESULT = {
+	verdict: 'failed', gradable: true, passed: 1, failed: 1, errors: 0, skipped: 0, total: 2, score: 50,
+	tests: [
+		{ name: 'test_add', classname: 'tests.test_calculator', file: null, status: 'passed', time: 0.001, message: null, score: null, max_score: null },
+		{ name: 'test_add_negative', classname: 'tests.test_calculator', file: null, status: 'failed', time: 0.002,
+			message: 'AssertionError: assert -1 == -2', score: null, max_score: null }
+	],
+	run: { exit_code: 1, signal: null, time: 1.42, memory: 61234, output: '1 failed, 1 passed', error: '', truncated: false },
+	compiler: 'python-3.14-tests', preset: 'pytest', pack: { version: '1.0' }, report_truncated: false,
+	time_limit: 20, memory_limit: 512, summary: '1 of 2 tests passed.'
+};
+const SUITE_RECEIPT = {
+	receipt: 'rcpt_s', format: 1, submission: SUB, account: 'acct_1', external_ref: null, issued: '2026-11-11T09:00:00Z',
+	compiler: { id: 'python-3.14-tests', version: '3.14-1.0-b1', image: null },
+	suite: { preset: 'pytest', command_sha256: 'a'.repeat(64), pack_version: '1.0' }, files_sha256: 'b'.repeat(64),
+	settings: { time_limit: 20, memory_limit: 512 }, verdict: 'failed', score: 50, passed: 1, total: 2,
+	tests: [{ status: 'passed' }, { status: 'failed' }], key_id: 'oc-2026-11', signature: 'c2ln'
+};
+
+describe('suites', () => {
+	test('runSuite posts the suite and files to run-tests and returns the named results', async () => {
+		reply(200, { ...SUITE_RESULT, submission: SUB, receipt: SUITE_RECEIPT });
+		const result = await client.runSuite({ compiler: 'python-3.14-tests', suite: { preset: 'pytest' }, files: SUITE_FILES });
+		assert.deepEqual([sent().method, sent().path], ['POST', '/api/run-tests/']);
+		assert.equal(sent().headers.authorization, 'key-123');
+		assert.equal(sent().headers['idempotency-key'], undefined);
+		assert.deepEqual(sent().body, { compiler: 'python-3.14-tests', files: SUITE_FILES, suite: { preset: 'pytest' } });
+		assert.deepEqual(result, { ...SUITE_RESULT, submission: SUB, receipt: SUITE_RECEIPT });
+		assert.deepEqual(result.tests.map((t) => [t.name, t.status]), [['test_add', 'passed'], ['test_add_negative', 'failed']]);
+	});
+
+	test('an empty suite runs the default preset, and every option given is sent', async () => {
+		reply(200, { ...SUITE_RESULT, submission: SUB, receipt: null });
+		await client.runSuite({ compiler: 'nodejs-24-tests', files: SUITE_FILES });
+		assert.deepEqual(sent().body, { compiler: 'nodejs-24-tests', files: SUITE_FILES, suite: {} });
+		reply(200, { ...SUITE_RESULT, preset: null, submission: SUB, receipt: null });
+		const result = await client.runSuite({
+			compiler: 'python-3.14-tests', suite: { command: 'python grade.py' }, files: SUITE_FILES, time_limit: 25,
+			memory_limit: 1024, external_ref: 'attempt-3', metadata: { learner: 9 }, idempotency_key: 'attempt-3'
+		});
+		assert.equal(result.preset, null);
+		assert.equal(sent().headers['idempotency-key'], 'attempt-3');
+		assert.deepEqual(sent().body, {
+			compiler: 'python-3.14-tests', suite: { command: 'python grade.py' }, files: SUITE_FILES, time_limit: 25,
+			memory_limit: 1024, external_ref: 'attempt-3', metadata: { learner: 9 }
+		});
+	});
+
+	test('a null preset beside a command is sent as given', async () => {
+		reply(200, { ...SUITE_RESULT, preset: null, submission: SUB, receipt: null });
+		await client.runSuite({ compiler: 'python-3.14-tests', suite: { preset: null, command: 'python grade.py' }, files: SUITE_FILES });
+		assert.deepEqual(sent().body.suite, { preset: null, command: 'python grade.py' });
+	});
+
+	test('what the API would refuse is refused before any request', async () => {
+		const files = SUITE_FILES;
+		await assert.rejects(client.runSuite({ compiler: 'python-3.14-tests', suite: { preset: 'pytest', command: 'pytest' }, files }),
+			(err) => err instanceof TypeError && /preset or command, not both/.test(err.message));
+		await assert.rejects(client.runSuite({ compiler: 'python-3.14-tests', files, async: true }),
+			(err) => err instanceof TypeError && /synchronous/.test(err.message));
+		await assert.rejects(client.runSuite({ compiler: 'python-3.14-tests', files, callback_url: 'https://example.com/hook' }), TypeError);
+		await assert.rejects(client.runSuite({ compiler: 'python-3.14-tests', files, idempotency_key: '' }), TypeError);
+		assert.deepEqual(requests, []);
+	});
+
+	test('a refused suite and a busy runner keep the API message and status', async () => {
+		reply(400, { error: 'tests cannot be sent with suite: a suite\'s test command decides its tests' });
+		await assert.rejects(client.runSuite({ compiler: 'python-3.14-tests', files: SUITE_FILES }), (err) => {
+			assert.ok(err instanceof OnlineCompilerError);
+			assert.ok(!(err instanceof RateLimitError));
+			assert.equal(err.status, 400);
+			assert.match(err.message, /cannot be sent with suite/);
+			return true;
+		});
+		reply(429, { error: 'Too many runs in progress. Please try again shortly.' });
+		await assert.rejects(client.runSuite({ compiler: 'python-3.14-tests', files: SUITE_FILES }), (err) => {
+			assert.ok(err instanceof RateLimitError);
+			assert.equal(err.status, 429);
+			assert.match(err.message, /try again shortly/);
+			return true;
+		});
+	});
+
+	test('a replayed suite request still running is waited for', async () => {
+		reply(202, { submission: SUB, status: 'running' });
+		reply(200, finished('finished', { result: SUITE_RESULT, receipt: SUITE_RECEIPT }));
+		const result = await client.runSuite({ compiler: 'python-3.14-tests', files: SUITE_FILES, idempotency_key: 'k1' });
+		assert.deepEqual(result, { ...SUITE_RESULT, submission: SUB, receipt: SUITE_RECEIPT });
+		assert.deepEqual(requests.slice(1).map((r) => r.path), [`/api/submissions/${SUB}/`]);
+	});
+
+	test('compilers passes a test pack\'s pack through', async () => {
+		const pack = { version: '1.0', presets: ['jest', 'mocha', 'node-test'], default: 'jest' };
+		reply(200, { compilers: [{ id: 'nodejs-24-tests', name: 'Node.js 24 (tests)', pack }], retired: {} });
+		assert.deepEqual((await client.compilers())[0].pack, pack);
+	});
+});
+
 // Two real runs against api.onlinecompiler.io; each counts toward the key's allowance.
 describe('live API', { skip: !process.env.ONLINECOMPILER_API_KEY && 'set ONLINECOMPILER_API_KEY to run' }, () => {
 	test('run and runTests', async () => {

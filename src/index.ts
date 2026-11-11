@@ -13,7 +13,7 @@ export {
 	type WebhookOptions
 } from './verify.js';
 
-export const VERSION = '0.7.1';
+export const VERSION = '0.8.0';
 
 const DEFAULT_BASE_URL = 'https://api.onlinecompiler.io';
 // Long enough for a 30-second run or a 60-second run-tests request, plus queueing and network time.
@@ -143,6 +143,34 @@ export interface JudgeRequest extends JudgingOptions {
 	tests?: number[];
 }
 
+/** What a suite runs: a preset of the test pack, or a custom command, never both. {} runs the pack's default
+ * preset (pytest on python-3.14-tests, jest on nodejs-24-tests). */
+export interface Suite {
+	/** A preset from the pack's presets in compilers(): pytest on python-3.14-tests; jest, mocha or node-test on
+	 * nodejs-24-tests. Each writes a JUnit XML report and gives each test 10 seconds. */
+	preset?: string | null;
+	/** A custom command, at most 4,000 bytes as UTF-8, run with bash in /sandbox where the files are. It must write
+	 * $OUTPUT_DIR/report.xml (JUnit XML) or $OUTPUT_DIR/results.json (Gradescope's shape); report.xml is read when
+	 * both exist. */
+	command?: string | null;
+}
+
+/** A suite run: a test pack's test command over your files, in one sandbox. It takes no code, tests, checker,
+ * scoring or args, and runs synchronously only. */
+export interface RunSuiteRequest extends Omit<JudgingOptions, 'async' | 'callback_url'> {
+	/** A test pack: python-3.14-tests or nodejs-24-tests (a compiler with pack in compilers()). */
+	compiler: string;
+	/** Default {}: the pack's default preset. */
+	suite?: Suite;
+	/** Every source: the code under test, the tests and any fixtures (up to 20 files, 1 MB in all). On
+	 * nodejs-24-tests, files under node_modules/ are refused: the pack provides node_modules. */
+	files: InputFile[];
+	/** Seconds the whole suite may run, above 0 and at most 30 (default 20). */
+	time_limit?: number;
+	/** Whole MB, 16 to 2048 (above 512 on Pro and Business; 512 when left out). */
+	memory_limit?: number;
+}
+
 type Async = { async: true };
 type Sync = { async?: false; callback_url?: undefined };
 
@@ -215,6 +243,114 @@ export interface RunTestsResult extends SubmissionResult {
 export interface JudgeResult extends RunTestsResult {
 	problem: string;
 	version: number;
+}
+
+/** A suite's verdict: the run's own problem first (compilation_error, time_limit_exceeded, memory_limit_exceeded,
+ * output_limit_exceeded, runtime_error for too many processes, internal_error on our side); then no_report when the
+ * command left no readable report; else accepted when the report names at least one test and every test passed,
+ * failed otherwise. A non-zero exit alone is no problem: test runners exit 1 when a test fails. */
+export type SuiteVerdict =
+	| 'accepted'
+	| 'failed'
+	| 'compilation_error'
+	| 'time_limit_exceeded'
+	| 'memory_limit_exceeded'
+	| 'output_limit_exceeded'
+	| 'runtime_error'
+	| 'no_report'
+	| 'internal_error';
+
+/** One test as the suite's report gave it, in report order. */
+export interface SuiteTestResult {
+	/** At most 500 characters, as are classname and file. */
+	name: string;
+	/** Its class, module or describe block, as the report names it. */
+	classname: string | null;
+	/** The file the report names, passed through as given. */
+	file: string | null;
+	status: 'passed' | 'failed' | 'error' | 'skipped';
+	/** Seconds, as the report gave them. */
+	time: number | null;
+	/** The failure, error or skip message, or a results.json test's output; at most 4,096 characters. */
+	message: string | null;
+	/** A results.json test's score and max_score; null otherwise. */
+	score: number | null;
+	max_score: number | null;
+}
+
+/** The suite's run itself: the test command's exit, and its stdout and stderr cut to 4,096 characters. Unlike
+ * run()'s result, time (seconds) and memory (peak KB) are numbers. */
+export interface SuiteRun {
+	exit_code: number;
+	signal: number | null;
+	time: number;
+	memory: number;
+	output: string;
+	error: string;
+	/** True when output or error was cut. */
+	truncated: boolean;
+}
+
+/** A finished suite's result, as GET /api/submissions/{id}/ gives it. */
+export interface SuiteResult {
+	verdict: SuiteVerdict;
+	/** false for no_report and internal_error: there are no results to grade by. */
+	gradable: boolean;
+	passed: number;
+	failed: number;
+	errors: number;
+	skipped: number;
+	/** Tests in the report (at most 1,000 are read). */
+	total: number;
+	/** 0 to 100: the percentage of tests passed, or for a results.json whose every test has score and max_score,
+	 * their scores over their maximums. */
+	score: number;
+	/** Empty when the run stopped (a run problem as the verdict) or left no report. */
+	tests: SuiteTestResult[];
+	run: SuiteRun;
+	compiler: string;
+	/** The preset that ran; null for a custom command. */
+	preset: string | null;
+	/** The pack's version, which changes only when its frameworks or libraries do. */
+	pack: { version: string };
+	/** True when the report had more than 1,000 tests. */
+	report_truncated: boolean;
+	/** The seconds the whole suite could run. */
+	time_limit: number;
+	/** The memory limit used, in MB. */
+	memory_limit: number;
+	/** The result in plain words from the counts, never a test's name or message. */
+	summary: string;
+}
+
+/** A suite's signed receipt: the suite by its preset, its command's hash and the pack's version, the files by
+ * hash, and each test's status only (never a test's name or message). Check it with verifyReceipt. */
+export interface SuiteReceipt {
+	receipt: string;
+	format: number;
+	submission: string;
+	account: string;
+	external_ref: string | null;
+	issued: string;
+	compiler: { id: string; version: string; image: string | null };
+	suite: { preset: string | null; command_sha256: string; pack_version: string };
+	files_sha256: string | null;
+	settings: { time_limit: number; memory_limit: number };
+	verdict: SuiteVerdict;
+	score: number;
+	passed: number;
+	total: number;
+	tests: { status: SuiteTestResult['status'] }[];
+	key_id: string;
+	signature: string;
+	[field: string]: unknown;
+}
+
+export interface RunSuiteResult extends SuiteResult {
+	/** The id this request is stored under. */
+	submission: string;
+	/** null when no receipt could be signed. */
+	receipt: SuiteReceipt | null;
 }
 
 /** An async submission's answer: its id and status ("queued", or the original's status for a replayed
@@ -374,6 +510,8 @@ export interface Compiler {
 	id: string;
 	name: string;
 	packages?: { name: string; version: string }[];
+	/** Only on a test pack, which runSuite() runs on: its version, its presets, and the preset an empty suite runs. */
+	pack?: { version: string; presets: string[]; default: string };
 }
 
 export interface Usage {
@@ -525,6 +663,26 @@ export class OnlineCompiler {
 		const [body, headers] = judging(request);
 		const answer = await this.request<RunTestsResult | SubmissionQueued>('POST', '/api/run-tests/', body, { headers });
 		return request.async ? answer : this.settled(answer);
+	}
+
+	/** Run a test pack's test command over your files in one sandbox: a named result per test from the report it
+	 * writes, a score, the run's own output, the submission id and a signed receipt. The whole suite counts as one
+	 * run, and runs synchronously only. compiler is a test pack (python-3.14-tests or nodejs-24-tests); suite is
+	 * { preset } or { command }, and {} (the default) runs the pack's default preset. external_ref, metadata and
+	 * idempotency_key work as in runTests(). A RateLimitError (429) when no sandbox came free in time counts
+	 * nothing, so send it again. */
+	async runSuite(request: RunSuiteRequest): Promise<RunSuiteResult> {
+		const options = request as RunSuiteRequest & JudgingOptions; // a JavaScript caller may send them anyway
+		if (options.async || options.callback_url !== undefined) {
+			throw new TypeError('runSuite is synchronous: send it without async or callback_url');
+		}
+		const { suite = {}, ...rest } = request;
+		if (suite.preset != null && suite.command != null) {
+			throw new TypeError('suite takes preset or command, not both');
+		}
+		const [body, headers] = judging({ ...rest, suite });
+		const answer = await this.request<RunSuiteResult | SubmissionQueued>('POST', '/api/run-tests/', body, { headers });
+		return this.settled(answer);
 	}
 
 	/** Queue a run and return at once with its id. The result is POSTed to the callback URL set on
@@ -717,7 +875,7 @@ export class OnlineCompiler {
 		return verifyReceipt(receipt, keys);
 	}
 
-	/** Every compiler id and its language name. Needs no API key. */
+	/** Every compiler id and its language name, with pack on a test pack. Needs no API key. */
 	async compilers(): Promise<Compiler[]> {
 		const body = await this.request<{ compilers: Compiler[] }>('GET', '/api/compilers/', undefined, { auth: false });
 		return body.compilers;
@@ -739,7 +897,7 @@ export class OnlineCompiler {
 
 	/** A sync judging answer. A retry whose Idempotency-Key finds the original still running answers 202 with its
 	 * id; wait for it and answer as the original would have. */
-	private async settled<T extends RunTestsResult>(answer: T | SubmissionQueued): Promise<T> {
+	private async settled<T extends RunTestsResult | RunSuiteResult>(answer: T | SubmissionQueued): Promise<T> {
 		if ('verdict' in answer || !('submission' in answer)) return answer as T;
 		let done: Submission;
 		try {
