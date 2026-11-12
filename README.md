@@ -96,8 +96,8 @@ again. `client.submission(id)` looks a submission up once.
 ## Test suites
 
 A suite runs a real test framework over your files in one sandbox and answers with a result per test, by
-name. It runs on a test pack, `python-3.14-tests` (pytest) or `nodejs-24-tests` (jest, mocha or
-`node-test`), and the whole suite counts as one run.
+name. It runs on a test pack: `python-3.14-tests` (pytest), `nodejs-24-tests` (jest, mocha or `node-test`),
+`openjdk-25-tests` (junit) or `dotnet-csharp-10-tests` (xunit or nunit). The whole suite counts as one run.
 
 ```js
 const result = await client.runSuite({
@@ -132,6 +132,21 @@ lists no tests, and `no_report` means the command wrote no report (`gradable` is
 report. A suite is synchronous only: `async` and `callback_url` are refused, while `external_ref`,
 `metadata` and `idempotency_key` work as in `runTests()`. A `RateLimitError` saying the runs are busy
 counted nothing, so send the suite again.
+
+On Pro and above, `services: ['postgresql']` starts a fresh PostgreSQL in the sandbox before the tests (on
+`python-3.14-tests` and `nodejs-24-tests`, from 0.9.0). The `.sql` files under `db/` run first, in name
+order, and `DATABASE_URL` and the `PG*` variables are set, so pg's `new Pool()` connects with no settings.
+Send `memory_limit: 1024` or more with it, since the server's memory counts in the run's;
+`client.compilers()` lists each pack's `services`:
+
+```js
+const result = await client.runSuite({
+  compiler: 'nodejs-24-tests',
+  suite: { preset: 'jest', services: ['postgresql'] },
+  memory_limit: 1024,
+  files,
+});
+```
 
 ## List submissions
 

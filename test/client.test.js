@@ -713,6 +713,21 @@ describe('suites', () => {
 		assert.deepEqual(sent().body.suite, { preset: null, command: 'python grade.py' });
 	});
 
+	test('services go in the suite, and the receipt signs them', async () => {
+		const receipt = { ...SUITE_RECEIPT, suite: { ...SUITE_RECEIPT.suite, services: ['postgresql'] } };
+		reply(200, { ...SUITE_RESULT, submission: SUB, receipt });
+		const result = await client.runSuite({
+			compiler: 'python-3.14-tests', suite: { preset: 'pytest', services: ['postgresql'] }, memory_limit: 1024, files: SUITE_FILES
+		});
+		assert.deepEqual(sent().body.suite, { preset: 'pytest', services: ['postgresql'] });
+		assert.equal(sent().body.memory_limit, 1024);
+		assert.deepEqual(result.receipt.suite.services, ['postgresql']);
+		reply(400, { error: 'PostgreSQL in a suite needs 32 processes at once: Pro and above (https://onlinecompiler.io/pricing)' });
+		await assert.rejects(client.runSuite({ compiler: 'nodejs-24-tests', suite: { services: ['postgresql'] }, files: SUITE_FILES }),
+			(err) => err instanceof OnlineCompilerError && err.status === 400 && /Pro and above/.test(err.message));
+		assert.deepEqual(sent().body.suite, { services: ['postgresql'] });
+	});
+
 	test('what the API would refuse is refused before any request', async () => {
 		const files = SUITE_FILES;
 		await assert.rejects(client.runSuite({ compiler: 'python-3.14-tests', suite: { preset: 'pytest', command: 'pytest' }, files }),
@@ -751,7 +766,7 @@ describe('suites', () => {
 	});
 
 	test('compilers passes a test pack\'s pack through', async () => {
-		const pack = { version: '1.0', presets: ['jest', 'mocha', 'node-test'], default: 'jest' };
+		const pack = { version: '1.1', presets: ['jest', 'mocha', 'node-test'], default: 'jest', services: ['postgresql'] };
 		reply(200, { compilers: [{ id: 'nodejs-24-tests', name: 'Node.js 24 (tests)', pack }], retired: {} });
 		assert.deepEqual((await client.compilers())[0].pack, pack);
 	});

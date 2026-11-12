@@ -13,7 +13,7 @@ export {
 	type WebhookOptions
 } from './verify.js';
 
-export const VERSION = '0.8.0';
+export const VERSION = '0.9.0';
 
 const DEFAULT_BASE_URL = 'https://api.onlinecompiler.io';
 // Long enough for a 30-second run or a 60-second run-tests request, plus queueing and network time.
@@ -144,21 +144,28 @@ export interface JudgeRequest extends JudgingOptions {
 }
 
 /** What a suite runs: a preset of the test pack, or a custom command, never both. {} runs the pack's default
- * preset (pytest on python-3.14-tests, jest on nodejs-24-tests). */
+ * preset (pytest on python-3.14-tests, jest on nodejs-24-tests, junit on openjdk-25-tests, xunit on
+ * dotnet-csharp-10-tests). */
 export interface Suite {
 	/** A preset from the pack's presets in compilers(): pytest on python-3.14-tests; jest, mocha or node-test on
-	 * nodejs-24-tests. Each writes a JUnit XML report and gives each test 10 seconds. */
+	 * nodejs-24-tests; junit on openjdk-25-tests; xunit or nunit on dotnet-csharp-10-tests. Each writes a JUnit XML
+	 * report. */
 	preset?: string | null;
 	/** A custom command, at most 4,000 bytes as UTF-8, run with bash in /sandbox where the files are. It must write
 	 * $OUTPUT_DIR/report.xml (JUnit XML) or $OUTPUT_DIR/results.json (Gradescope's shape); report.xml is read when
 	 * both exist. */
 	command?: string | null;
+	/** Services started in the sandbox before the tests: ['postgresql'] on python-3.14-tests and nodejs-24-tests, for
+	 * accounts on Pro and above. A fresh PostgreSQL, seeded from the .sql files under db/, with DATABASE_URL and the
+	 * PG* variables set. Send memory_limit 1024 or more with it: the server's memory counts in the run's. */
+	services?: string[] | null;
 }
 
 /** A suite run: a test pack's test command over your files, in one sandbox. It takes no code, tests, checker,
  * scoring or args, and runs synchronously only. */
 export interface RunSuiteRequest extends Omit<JudgingOptions, 'async' | 'callback_url'> {
-	/** A test pack: python-3.14-tests or nodejs-24-tests (a compiler with pack in compilers()). */
+	/** A test pack: python-3.14-tests, nodejs-24-tests, openjdk-25-tests or dotnet-csharp-10-tests (a compiler with
+	 * pack in compilers()). */
 	compiler: string;
 	/** Default {}: the pack's default preset. */
 	suite?: Suite;
@@ -333,7 +340,8 @@ export interface SuiteReceipt {
 	external_ref: string | null;
 	issued: string;
 	compiler: { id: string; version: string; image: string | null };
-	suite: { preset: string | null; command_sha256: string; pack_version: string };
+	/** services is there only when the suite started any. */
+	suite: { preset: string | null; command_sha256: string; pack_version: string; services?: string[] };
 	files_sha256: string | null;
 	settings: { time_limit: number; memory_limit: number };
 	verdict: SuiteVerdict;
@@ -510,8 +518,9 @@ export interface Compiler {
 	id: string;
 	name: string;
 	packages?: { name: string; version: string }[];
-	/** Only on a test pack, which runSuite() runs on: its version, its presets, and the preset an empty suite runs. */
-	pack?: { version: string; presets: string[]; default: string };
+	/** Only on a test pack, which runSuite() runs on: its version, its presets, the preset an empty suite runs, and the
+	 * services runSuite() can start on it (sorted; empty when it has none). */
+	pack?: { version: string; presets: string[]; default: string; services: string[] };
 }
 
 export interface Usage {
@@ -667,8 +676,9 @@ export class OnlineCompiler {
 
 	/** Run a test pack's test command over your files in one sandbox: a named result per test from the report it
 	 * writes, a score, the run's own output, the submission id and a signed receipt. The whole suite counts as one
-	 * run, and runs synchronously only. compiler is a test pack (python-3.14-tests or nodejs-24-tests); suite is
-	 * { preset } or { command }, and {} (the default) runs the pack's default preset. external_ref, metadata and
+	 * run, and runs synchronously only. compiler is a test pack (python-3.14-tests, nodejs-24-tests, openjdk-25-tests
+	 * or dotnet-csharp-10-tests); suite is { preset } or { command }, and {} (the default) runs the pack's default
+	 * preset; add services: ['postgresql'] for a database in the sandbox. external_ref, metadata and
 	 * idempotency_key work as in runTests(). A RateLimitError (429) when no sandbox came free in time counts
 	 * nothing, so send it again. */
 	async runSuite(request: RunSuiteRequest): Promise<RunSuiteResult> {
